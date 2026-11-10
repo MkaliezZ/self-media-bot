@@ -6,7 +6,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { createApp } from '../../server/app.js';
 import { modelServer } from '../fixtures/model-server.js';
-import { scriptSubmission, toolResult, until } from '../helpers.js';
+import { scriptSubmission, toolResult, until, installedWorkbench } from '../helpers.js';
 
 const stages = new Map<string, { phase: number; context?: any }>();
 const fixture = await modelServer(body => {
@@ -23,7 +23,8 @@ const parent = path.join(os.tmpdir(), 'opencode'); await mkdir(parent, { recursi
 const home = await mkdtemp(path.join(parent, 'self-media-bot-browser-'));
 const instance = await createApp({ root: process.cwd(), home });
 const settings = instance.config.public();
-await instance.config.save({ model: 'deepseek-flash', baseUrl: fixture.url, apiKey: `sk-${'0'.repeat(32)}`, maxTokens: 4096, vision: true, workbenchRoot: settings.workbenchRoot, python: settings.python });
+const dependencies = settings.workbenchRoot ? { workbenchRoot: settings.workbenchRoot, python: settings.python } : await installedWorkbench();
+await instance.config.save({ model: 'deepseek-flash', baseUrl: fixture.url, apiKey: `sk-${'0'.repeat(32)}`, maxTokens: 4096, vision: true, ...dependencies });
 
 const videoProject = await instance.wb.request('POST', '/api/projects', { title: '演示验收｜剪辑与包装（合成片源）' }) as any;
 await instance.store.create(videoProject.id, videoProject.title, 'edit');

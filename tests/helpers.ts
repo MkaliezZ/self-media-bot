@@ -4,6 +4,14 @@ import path from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
 import { modelServer, type ModelReply } from './fixtures/model-server.js';
+import { Config } from '../server/config.js';
+
+export async function installedWorkbench() {
+  const config = new Config(); await config.init();
+  const settings = config.public();
+  if (!settings.workbenchRoot) throw new Error('测试前请执行 npm run setup，或提供 SELF_MEDIA_WORKBENCH_ROOT 与 SELF_MEDIA_WORKBENCH_PYTHON。');
+  return { workbenchRoot: settings.workbenchRoot, python: settings.python };
+}
 
 export async function tempHome(label = 'test') {
   const root = path.join(os.tmpdir(), 'opencode'); await mkdir(root, { recursive: true });
@@ -14,7 +22,8 @@ export async function testApp(reply: (body: any, index: number) => ModelReply | 
   const home = await tempHome('integration');
   const instance = await createApp({ root: process.cwd(), home });
   const s = instance.config.public();
-  await instance.config.save({ model: 'deepseek-flash', baseUrl: fixture.url, apiKey: `sk-${'0'.repeat(32)}`, maxTokens: 4096, vision: true, workbenchRoot: s.workbenchRoot, python: s.python });
+  const dependencies = s.workbenchRoot ? { workbenchRoot: s.workbenchRoot, python: s.python } : await installedWorkbench();
+  await instance.config.save({ model: 'deepseek-flash', baseUrl: fixture.url, apiKey: `sk-${'0'.repeat(32)}`, maxTokens: 4096, vision: true, ...dependencies });
   await instance.app.listen({ host: '127.0.0.1', port: 0 });
   const port = (instance.app.server.address() as AddressInfo).port;
   const url = `http://127.0.0.1:${port}`; instance.setOrigin(url);

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import { createApp } from '../server/app.js';
 import { modelServer } from './fixtures/model-server.js';
-import { scriptSubmission, tempHome, toolResult, until, testApp } from './helpers.js';
+import { scriptSubmission, tempHome, toolResult, until, testApp, installedWorkbench } from './helpers.js';
 
 describe('完整主服务重启后的续做', () => {
   it('重建主服务，保留对话、项目、DSH会话与旧稿，再保存修订版', async () => {
@@ -17,7 +17,8 @@ describe('完整主服务重启后的续做', () => {
     async function start() {
       host = await createApp({ root: process.cwd(), home });
       const s = host.config.public();
-      await host.config.save({ model: 'deepseek-flash', baseUrl: fixture.url, maxTokens: 4096, vision: false, workbenchRoot: s.workbenchRoot, python: s.python, apiKey: `sk-${'0'.repeat(32)}` });
+      const dependencies = s.workbenchRoot ? { workbenchRoot: s.workbenchRoot, python: s.python } : await installedWorkbench();
+      await host.config.save({ model: 'deepseek-flash', baseUrl: fixture.url, maxTokens: 4096, vision: false, ...dependencies, apiKey: `sk-${'0'.repeat(32)}` });
       await host.app.listen({ host: '127.0.0.1', port: 0 });
       const url = `http://127.0.0.1:${(host.app.server.address() as AddressInfo).port}`; host.setOrigin(url);
       const init = await fetch(`${url}/api/bootstrap`); const cookie = init.headers.get('set-cookie')!.split(';')[0]; const csrf = (await init.json() as any).csrfToken;
