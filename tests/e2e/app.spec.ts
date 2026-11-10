@@ -1,8 +1,12 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
 const errors: string[] = [];
+async function capture(page: Page, info: TestInfo, name: string) {
+  const target = process.env.UPDATE_DOC_IMAGES === '1' ? path.join(process.cwd(), 'docs', 'images', name) : info.outputPath(name);
+  await fs.mkdir(path.dirname(target), { recursive: true }); await page.screenshot({ path: target, fullPage: true });
+}
 test.beforeEach(async ({ page }) => { errors.length = 0; page.on('pageerror', e => errors.push(e.message)); await page.goto('/'); await expect(page.getByRole('heading', { name: '这次，想完成哪项创作？' })).toBeVisible(); });
 test.afterEach(() => { expect(errors).toEqual([]); });
 
@@ -19,7 +23,7 @@ test('首页入口、项目搜索、设置和空状态是真实交互', async ({
   await expect(page.getByText('没有匹配的项目')).toBeVisible();
 });
 
-test('上传→真实DSH工具循环→脚本→手动新版本→重载恢复', async ({ page }) => {
+test('上传→真实DSH工具循环→脚本→手动新版本→重载恢复', async ({ page }, info) => {
   await page.getByRole('button', { name: /^口播脚本 / }).click();
   await page.locator('input[type=file]').setInputFiles({ name: '创作要点.md', mimeType: 'text/markdown', buffer: Buffer.from('演示验收材料：需求由目标、材料、边界组成。不编造个人经历。') });
   await expect(page.getByText('创作要点.md', { exact: true })).toBeVisible();
@@ -41,11 +45,10 @@ test('上传→真实DSH工具循环→脚本→手动新版本→重载恢复',
   await page.keyboard.press('Escape');
   await page.getByRole('tab', { name: '成果', exact: true }).click();
   await expect(page.getByRole('button', { name: '保存为新版本' })).toBeDisabled();
-  await fs.mkdir(path.join(process.cwd(), 'docs', 'images'), { recursive: true });
-  await page.screenshot({ path: 'docs/images/script-workspace.png', fullPage: true });
+  await capture(page, info, 'script-workspace.png');
 });
 
-test('实际视频播放、Range下载、横竖比例和移动窄屏成果面板', async ({ page }) => {
+test('实际视频播放、Range下载、横竖比例和移动窄屏成果面板', async ({ page }, info) => {
   const projects = await (await page.request.get('/api/projects')).json();
   const project = projects.find((p: any) => p.title.startsWith('演示验收｜剪辑'));
   await page.goto(`/#project/${project.id}`);
@@ -59,7 +62,7 @@ test('实际视频播放、Range下载、横竖比例和移动窄屏成果面板
   await expect(page.getByText('待人工审阅', { exact: true })).toBeVisible();
   const download = page.waitForEvent('download'); await page.getByRole('link', { name: '下载成片', exact: true }).click();
   const result = await download; expect(result.suggestedFilename()).toMatch(/\.mp4$/); expect(await result.failure()).toBeNull();
-  await page.screenshot({ path: 'docs/images/video-workspace.png', fullPage: true });
+  await capture(page, info, 'video-workspace.png');
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('button', { name: '成果', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '成果', exact: true }).click();
@@ -67,9 +70,8 @@ test('实际视频播放、Range下载、横竖比例和移动窄屏成果面板
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
-test('1440桌面首页截图与窄屏不横向溢出', async ({ page }) => {
-  await fs.mkdir(path.join(process.cwd(), 'docs', 'images'), { recursive: true });
-  await page.screenshot({ path: 'docs/images/home.png', fullPage: true });
+test('1440桌面首页截图与窄屏不横向溢出', async ({ page }, info) => {
+  await capture(page, info, 'home.png');
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await expect(page.getByRole('textbox', { name: '描述创作需求' })).toBeVisible();

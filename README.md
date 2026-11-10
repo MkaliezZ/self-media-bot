@@ -38,7 +38,7 @@
 - **Node.js 24.9+**（建议24 LTS）和 npm。
 - **Python 3.11+**。已有工作台时复用其解释器与依赖。
 - 首次自动安装工作台需要 Git 和联网下载依赖。
-- 剪辑、抽帧与音视频导出需要 `ffmpeg` / `ffprobe`。
+- 剪辑、抽帧与音视频导出需要 `ffmpeg` / `ffprobe`；原生时间轴/视觉包装需要支持 `-/filter_complex` 的版本，建议 **FFmpeg 8.1+**，本机使用8.1.1。部分Linux发行版自带版本过旧。
 - 转写另需兼容的本地 ASR 依赖和模型；本产品不自动下载权重，不修改全局 PATH。
 - 模型使用 **DeepSeek Messages API / 兼容网关**。默认模型为 `deepseek-flash`；不是把 OpenAI Chat Completions 地址直接填进来。
 

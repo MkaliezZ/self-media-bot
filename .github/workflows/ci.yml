@@ -21,7 +21,21 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install compatible FFmpeg 8.1 with checksum verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          download="$RUNNER_TEMP/self-media-ffmpeg-download"
+          install="$RUNNER_TEMP/self-media-ffmpeg"
+          mkdir -p "$download" "$install"
+          archive="ffmpeg-n8.1-latest-linux64-gpl-8.1.tar.xz"
+          base="https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/latest"
+          curl --fail --location --retry 3 "$base/$archive" --output "$download/$archive"
+          curl --fail --location --retry 3 "$base/checksums.sha256" --output "$download/checksums.sha256"
+          (cd "$download" && grep -F "$archive" checksums.sha256 | sha256sum --check -)
+          tar -xJf "$download/$archive" --strip-components=1 -C "$install"
+          echo "$install/bin" >> "$GITHUB_PATH"
+          "$install/bin/ffmpeg" -version | head -n 1
       - run: npm ci --ignore-scripts --no-audit --no-fund
       - run: npm run setup
       - run: npm run check
