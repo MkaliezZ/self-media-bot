@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/MkaliezZ/self-media-workbench.git",
+  "commit": "59589fc365e084de9b9bd0759714c07eaabd9b7b",
+  "license": "MIT",
+  "note": "External, unmodified dependency. Existing installations are reused, never reset or overwritten."
+}

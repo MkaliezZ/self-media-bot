@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.local/
+.env
+.env.*
+!.env.example
+*.log
+test-results/
+playwright-report/
+release/
+ui-design/
+给Codex的UI设计任务.md
+自媒体Bot-前端UI规划-v1.md
+.DS_Store
+__pycache__/
+*.pyc
