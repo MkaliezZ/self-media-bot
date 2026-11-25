@@ -13,10 +13,23 @@ const fixture = await modelServer(body => {
   const userText = [...body.messages].reverse().filter((m: any) => m.role === 'user').map((m: any) => typeof m.content === 'string' ? m.content : m.content.filter((c: any) => c.type === 'text').map((c: any) => c.text).join('\n')).join('\n');
   const pid = /当前项目 ID：([a-z0-9-]+)/i.exec(userText)?.[1] ?? 'default';
   const state = stages.get(pid) ?? { phase: 0 }; stages.set(pid, state);
-  const step = state.phase++ % 4;
+  const step = state.phase++ % 5;
   if (step === 0) return { tool: { name: 'media_context', input: {} } };
   if (step === 1) { state.context = toolResult(body); return { tool: { name: 'media_schema', input: { name: 'script' } } }; }
-  if (step === 2) return { tool: { name: 'media_request', input: { method: 'POST', path: `/api/agent/v1/projects/${state.context.project.id}/artifacts`, body_json: JSON.stringify(scriptSubmission(state.context)) } } };
+  if (step === 2) {
+    const source = state.context.sources.find((item: any) => item.label === '创作要点.md');
+    const spoken = scriptSubmission(state.context).payload.segments[0].spoken;
+    return { tool: { name: 'media_script_plan', input: { reference_source_ids: [], draft_source_id: source.id, preserve: [], logic_json: JSON.stringify([
+      { label: '目标、材料和边界', source_quote: '需求由目标、材料、边界组成', spoken_options: [spoken] },
+    ]) } } };
+  }
+  if (step === 3) {
+    const draft = scriptSubmission(state.context);
+    draft.payload.cta = '';
+    return { tool: { name: 'media_request', input: { method: 'POST', path: `/api/agent/v1/projects/${state.context.project.id}/artifacts`, body_json: JSON.stringify(draft) } } };
+  }
+  const saved = toolResult(body);
+  if (!saved?.accepted) throw new Error(`浏览器夹具保存失败：${JSON.stringify(saved)}`);
   return { text: '已通过工作台保存口播稿。原稿与历史版本保留，时长仍需实际试读。（本项目为自动化验收素材）' };
 });
 const parent = path.join(os.tmpdir(), 'opencode'); await mkdir(parent, { recursive: true });
