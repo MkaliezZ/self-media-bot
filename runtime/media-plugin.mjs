@@ -8,9 +8,10 @@ export const inject = ['tools'];
 
 const definitions = [
   ['media_context', '读取当前自媒体项目的最新上下文、素材、成果、revision 和 context_id。每次写入后重新读取。', {}],
-  ['media_reference', '读取自媒体方法文档。支持 SKILL.md、AGENTS.md、references/具体环节.md、docs/相关文档.md；不是通用文件读取。', { name: { type: 'string', required: true } }],
+  ['media_reference', '读取自媒体方法文档。口播文案编排用 bot/script-copy.md；也支持工作台的 SKILL.md、AGENTS.md、references/具体环节.md、docs/相关文档.md。', { name: { type: 'string', required: true } }],
   ['media_schema', '读取实际能力清单或 JSON Schema。name=capabilities 得到接口索引；其他如 submission、script、lighting-plan、timeline-plan。', { name: { type: 'string', required: true } }],
   ['media_doctor', '检查当前实际运行环境、ASR/GPU策略、FFmpeg和包装组件。环境检测不等于本轮推理成功；不安装或下载任何内容。', {}],
+  ['media_script_plan', '写稿前登记外部参考和保留内容。logic_json 是按口播顺序排列的数组，元素为 {label, source_quote, spoken_options, source_id?, kind?, after_cta?}。关键服务逐项登记 kind=offer，学生具体用法可登记 kind=student_use；在行动之后念的收获登记 after_cta=true。spoken_options 填同义口语短句备选。受控对照时 comparison_json 必填，提供自有 source_id、两条逐字引文 fixed_quote 和 changed_quote、三句口播 fixed/changed/conclusion，以及 fixed_subjects。', { reference_source_ids: { type: 'array', items: { type: 'string' }, required: true }, draft_source_id: { type: 'string' }, opening: { type: 'string' }, preserve: { type: 'array', items: { type: 'string' }, required: true }, comparison_json: { type: 'string' }, logic_json: { type: 'string' } }],
   ['media_request', '调用当前自媒体项目的工作台接口。path 为 /api/...，body_json 为严格 JSON 字符串。只允许 GET/POST/PUT；不允许其他项目、任意命令或外部发布。', { method: { type: 'string', required: true }, path: { type: 'string', required: true }, body_json: { type: 'string' } }],
   ['media_frame', '抽取当前项目原片/成片的一个真实画面，返回本机图片路径，再调用 read_image 审图。不得把抽帧本身称为已审阅。', { media_id: { type: 'string', required: true }, seconds: { type: 'number', required: true }, export_id: { type: 'string' } }],
   ['media_ask_user', '只在实际缺项或需要用户选择时询问。返回用户明确回答；不得代替用户批准。', { question: { type: 'string', required: true }, options: { type: 'array', items: { type: 'string' } } }],

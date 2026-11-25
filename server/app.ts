@@ -149,8 +149,12 @@ export async function createApp(options: AppOptions) {
       await wb.applyUploadDeclarations(projectId, uploads, result.registered ?? []);
       // Preserve the exact user instruction as a declared source, not an observed fact.
       const ctx = await wb.context(projectId);
-      await wb.request('POST', `/api/agent/v1/projects/${projectId}/sources`, { revision: ctx.project.revision, label: '本轮用户要求', nature: 'provided', origin: '自媒体 Bot 对话', content: body.prompt });
-      return result;
+      const saved = await wb.request('POST', `/api/agent/v1/projects/${projectId}/sources`, { revision: ctx.project.revision, label: '本轮用户要求', nature: 'provided', origin: '自媒体 Bot 对话', content: body.prompt }) as Json;
+      const attachmentSources = uploads.flatMap((upload, i) => {
+        const material = result.registered?.[i];
+        return material?.id ? [{ name: upload.name, kind: material.kind, id: material.id }] : [];
+      });
+      return { ...result, promptSourceId: saved.source.id, attachmentSources };
     }); } catch (error) {
       await store.update(projectId, p => {
         const t = p.tasks.find(t => t.id === task.id)!; t.status = 'failed'; t.error = errorText(error); t.finishedAt = new Date().toISOString();

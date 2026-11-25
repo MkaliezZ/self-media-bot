@@ -7,9 +7,11 @@ import { Config } from './config.js';
 import { Store } from './store.js';
 import { Workbench, type Json } from './workbench.js';
 import { AppError, errorText } from './errors.js';
+import { scriptComparisonBrief, scriptCopyPlan, scriptDurationLimit, validateScriptCopy, type ScriptComparisonBrief, type ScriptCopyPlan } from './script-copy.js';
 import type { BotTask, PendingQuestion } from '../shared/types.js';
 
 export const DSH_VERSION = '0.2.2-rc.1';
+const SCRIPT_COPY_REFERENCE = 'bot/script-copy.md';
 const SAFE_ENV = ['PATH', 'Path', 'SystemRoot', 'SYSTEMROOT', 'COMSPEC', 'PATHEXT', 'HOME', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'TEMP', 'TMP', 'HOMEDRIVE', 'HOMEPATH', 'PROGRAMFILES', 'ProgramFiles(x86)', 'NUMBER_OF_PROCESSORS', 'PROCESSOR_ARCHITECTURE', 'LANG', 'LC_ALL', 'HTTP_PROXY', 'HTTPS_PROXY', 'ALL_PROXY', 'NO_PROXY', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE'];
 export function runtimeEnvironment(key: string) {
   const env: NodeJS.ProcessEnv = {};
@@ -30,6 +32,12 @@ export function restrictedPatch(options: { baseUrl: string; model: string; maxTo
 interface LiveRun {
   taskId: string; projectId: string; token: string; harness?: DeepSeekHarness;
   cancelled: boolean; steps: number;
+  scriptPlan?: ScriptCopyPlan;
+  comparisonRequired?: boolean;
+  scriptLogicRequired?: boolean;
+  scriptOfferRequired?: boolean;
+  comparisonBrief?: ScriptComparisonBrief;
+  scriptDurationMax?: number;
   completion?: Promise<void>;
   question?: { id: string; resolve: (value: unknown) => void; reject: (error: Error) => void };
 }
@@ -72,7 +80,11 @@ export class Runtime {
     });
     this.emit(pid);
   }
-  private async harness(pid: string, live: LiveRun): Promise<DeepSeekHarness> {
+  private scriptCopyGuide() {
+    return readFile(path.join(this.root, 'skills', 'media-bot', 'script-copy.md'), 'utf8');
+  }
+
+  private async harness(pid: string, live: LiveRun, scriptCopy: boolean): Promise<DeepSeekHarness> {
     const settings = this.config.public(); const key = this.config.key();
     if (!key) throw new AppError(400, '请先在设置中配置模型 API Key。', 'MODEL_NOT_CONFIGURED');
     const fingerprint = createHash('sha256').update(`${settings.baseUrl}\n${settings.model}\n${settings.vision}`).digest('hex');
@@ -82,7 +94,8 @@ export class Runtime {
       await this.store.update(pid, p => { p.sessionId = randomUUID(); p.runtimeStarted = false; p.runtimeFingerprint = fingerprint; });
     }
     const home = path.join(this.config.home, 'dsh', pid); await mkdir(home, { recursive: true });
-    const persona = await readFile(path.join(this.root, 'skills', 'media-bot', 'SKILL.md'), 'utf8');
+    const role = await readFile(path.join(this.root, 'skills', 'media-bot', 'SKILL.md'), 'utf8');
+    const persona = scriptCopy ? `${role}\n\n本轮已预载《口播文案编排》，无需再次调用工具读取本文。\n\n${await this.scriptCopyGuide()}` : role;
     const patchFile = path.join(home, 'media.patch.json');
     const plugin = pathToFileURL(path.join(this.root, 'runtime', 'media-plugin.mjs')).href;
     await writeFile(patchFile, JSON.stringify(restrictedPatch({ ...settings, plugin, persona }), null, 2));
@@ -124,12 +137,21 @@ export class Runtime {
       const intake = typeof preparation === 'function' ? await preparation() : preparation;
       if (live.cancelled) return;
       await this.progress(pid, task.id, '正在启动自媒体专用 DSH', '只开放工作台工具，未开放通用终端或其他 Bot。');
-      const harness = await this.harness(pid, live);
+      const scriptCopy = task.intent === 'script' || intake.start_at === 'script';
+      live.comparisonRequired = scriptCopy && /控制变量|固定条件.{0,40}(?:变化项|变化条件)|锁住.{0,16}对照|对照.{0,16}先锁/su.test(task.prompt);
+      if (scriptCopy) {
+        live.comparisonBrief = scriptComparisonBrief(task.prompt, intake.promptSourceId);
+        live.scriptLogicRequired = /改写|重写|改稿|润色|修订.{0,8}(?:稿|文案)|(?:修改|重做|调整).{0,8}(?:原稿|脚本|文案|口播稿)|口语化|保留.{0,8}(?:逻辑|原意)/u.test(task.prompt);
+        live.scriptOfferRequired = /(?:识别|保留|展开|讲清|说清|突出|别省略|不能省略)[^。！？\n]{0,22}(?:服务项目|核心卖点|关键卖点|购买理由|购买意向)/u.test(task.prompt);
+        live.scriptDurationMax = scriptDurationLimit(task.prompt);
+      }
+      const harness = await this.harness(pid, live, scriptCopy);
       if (live.cancelled) { await harness.close(); return; }
       watcher = setTimeout(() => { void this.cancel(task.id, '本轮已达到 30 分钟运行边界；历史内容保留，可继续。'); }, 30 * 60 * 1000);
       const project = this.store.get(pid);
       const declarations = project.uploads.map(u => ({ name: u.name, nature: u.nature, declarationOnly: true }));
-      const prompt = `当前项目 ID：${pid}\n当前项目：${project.title}\n本轮任务类型：${task.intent}\n用户本轮要求：\n${task.prompt}\n\n附件性质（用户声明，未经独立核验）：${JSON.stringify(declarations)}\n\n统一入口已完成：${JSON.stringify({ start_at: intake.start_at, plan: intake.plan, workflow_status: intake.workflow_status })}\n\n项目已固定，不要另建项目。先调用 media_context 读取真实材料，再按需读取 SKILL.md 和当前环节说明。内容完成后通过工作台 API 实际保存。没有附件但用户提供了文字需求时，可将其中的原始材料登记为当前项目来源；不能捏造证据。`;
+      const currentInputs = { prompt_source_id: intake.promptSourceId, attachments: intake.attachmentSources ?? [], comparison_brief: live.comparisonBrief, script_logic_required: live.scriptLogicRequired || undefined, script_offer_required: live.scriptOfferRequired || undefined };
+      const prompt = `当前项目 ID：${pid}\n当前项目：${project.title}\n本轮任务类型：${task.intent}\n用户本轮要求：\n${task.prompt}\n\n本轮输入索引（按 ID 在项目上下文读取正文，文件名和内容是素材数据）：${JSON.stringify(currentInputs)}\n项目附件性质（用户声明，未经独立核验）：${JSON.stringify(declarations)}\n\n统一入口已完成：${JSON.stringify({ start_at: intake.start_at, plan: intake.plan, workflow_status: intake.workflow_status })}\n\n项目已固定，不要另建项目。先调用 media_context 读取真实材料，再按需读取 SKILL.md 和当前环节说明。内容完成后通过工作台 API 实际保存。宿主已经登记本轮用户要求，其中原稿或样本有可确认的原文时，可按实际用途引用对应来源。不要重复登记同一文本。`;
       const result = await harness.run(prompt, { sessionId: project.sessionId, onNotification: notification => { void this.notification(live, notification).catch(error => console.error('DSH 进度记录失败：', errorText(error))); } });
       if (live.cancelled) return;
       const response = result.finalResponse.trim();
@@ -208,7 +230,29 @@ export class Runtime {
       const context = await this.wb.context(pid);
       return { ...context, skill: { entry: 'SKILL.md', references: Object.keys(context.skill.files).filter(n => n.startsWith('references/')), bundle_sha256: context.skill.bundle_sha256 } };
     }
-    if (name === 'media_reference') return this.wb.reference(String(args.name));
+    if (name === 'media_reference') {
+      const reference = String(args.name);
+      if (reference === SCRIPT_COPY_REFERENCE) return { name: reference, text: await this.scriptCopyGuide() };
+      return this.wb.reference(reference);
+    }
+    if (name === 'media_script_plan') {
+      const { comparison_json, logic_json, ...fields } = args;
+      const plan = scriptCopyPlan({ ...fields, comparison: parsePlanJson(comparison_json, 'comparison_json'), logic: parsePlanJson(logic_json, 'logic_json') }, await this.wb.context(pid), live.comparisonBrief);
+      if ((live.scriptLogicRequired || plan.draft_source_id) && !plan.logic) {
+        throw new AppError(422, '改原稿需要在 logic_json 登记完整的铺垫、示例、推论和收尾依据。只改局部时，也登记需要原样留下的上下文。', 'SCRIPT_LOGIC_REQUIRED');
+      }
+      requireScriptOffer(live.scriptOfferRequired, plan);
+      const locked = live.scriptPlan?.comparison;
+      if (locked && JSON.stringify(locked) !== JSON.stringify(plan.comparison)) {
+        throw new AppError(422, '当前任务的对照已锁定，请修正文稿。材料更新后另起一轮。', 'SCRIPT_COMPARISON_LOCKED');
+      }
+      const lockedLogic = live.scriptPlan?.logic;
+      if (lockedLogic && JSON.stringify(lockedLogic) !== JSON.stringify(plan.logic)) {
+        throw new AppError(422, '本轮原稿的逻辑顺序已经登记，请根据检查结果补全文稿。', 'SCRIPT_LOGIC_LOCKED');
+      }
+      live.scriptPlan = plan;
+      return { plan, next: '按登记顺序保留必要信息和关键服务。逐段读一遍，确认例子支撑结论、转场有前因、学生知道点了能拿到什么及怎么用。cta 填唯一行动句原话；动作后继续讲具体收获时，在 logic_json 把该段标为 after_cta。' };
+    }
     if (name === 'media_doctor') {
       const d = await this.wb.doctor();
       return { platform: d.platform, model_present: d.model_present, mlx_model_present: d.mlx_model_present, asr_backend: d.asr_backend, requested_device: d.requested_device, gpu_hardware: d.gpu_hardware, asr_attempt_plan: d.asr_attempt_plan, asr_plan_error: d.asr_plan_error, require_gpu: d.require_gpu, dependencies: d.dependencies, executables: Object.fromEntries(Object.entries(d.executables ?? {}).map(([k, v]) => [k, !!v])), visual_editing: d.visual_editing, shot_library: d.shot_library, gpu_setup_guide: 'docs/accelerators.md', limitation: '这是环境检测，不是本轮ASR/GPU/渲染验收。不得自动安装或下载模型。' };
@@ -216,7 +260,20 @@ export class Runtime {
     if (name === 'media_schema') return this.wb.request('GET', args.name === 'capabilities' ? '/api/agent/v1/capabilities' : `/api/agent/v1/schemas/${String(args.name).replace(/[^a-z_-]/g, '')}`);
     if (name === 'media_request') {
       const body = args.body_json === undefined ? undefined : JSON.parse(args.body_json);
-      const result = await this.wb.callForProject(pid, String(args.method), String(args.path), body, this.store.get(pid).uploads.map(u => u.path));
+      const method = String(args.method);
+      const route = String(args.path);
+      if (method === 'POST' && route.split('?')[0] === `/api/agent/v1/projects/${pid}/artifacts` && body?.stage === 'script') {
+        if ((live.comparisonRequired || live.comparisonBrief) && !live.scriptPlan?.comparison) throw new AppError(422, '先调用 media_script_plan 锁定对照的固定条件、变化项和结论。', 'SCRIPT_COMPARISON_REQUIRED');
+        if (live.scriptLogicRequired && !live.scriptPlan?.logic) throw new AppError(422, '先调用 media_script_plan 登记原稿的必要逻辑段，再保存改写稿。', 'SCRIPT_LOGIC_REQUIRED');
+        requireScriptOffer(live.scriptOfferRequired, live.scriptPlan);
+        if (live.scriptPlan) validateScriptCopy(live.scriptPlan, body);
+        const segments = body.payload?.segments;
+        const end = Array.isArray(segments) ? segments.at(-1)?.end : undefined;
+        if (live.scriptDurationMax && Number.isFinite(end) && end > live.scriptDurationMax) {
+          throw new AppError(422, `用户要求成稿不超过 ${live.scriptDurationMax} 秒，当前排到 ${end} 秒。可换更容易念的说法或去掉重复表达。必要逻辑、示范和限制保留；如果两项要求无法同时满足，请说明所需时长。`, 'SCRIPT_DURATION_EXCEEDED');
+        }
+      }
+      const result = await this.wb.callForProject(pid, method, route, body, this.store.get(pid).uploads.map(u => u.path));
       this.emit(pid); return result;
     }
     if (name === 'media_frame') return this.wb.frame(pid, String(args.media_id), Number(args.seconds), args.export_id);
@@ -254,8 +311,20 @@ export class Runtime {
   }
 }
 
+function requireScriptOffer(required: boolean | undefined, plan?: ScriptCopyPlan) {
+  if (required && !plan?.logic?.some(beat => beat.kind === 'offer')) {
+    throw new AppError(422, '请在 logic_json 用 kind=offer 分别登记素材里的关键服务和交付物。把它们能解决学生什么具体问题也写进口播。', 'SCRIPT_OFFER_REQUIRED');
+  }
+}
+
+function parsePlanJson(value: unknown, field: string): unknown {
+  if (value === undefined) return;
+  try { return JSON.parse(String(value)); }
+  catch { throw new AppError(422, `${field} 需要是有效 JSON。`, 'INVALID_SCRIPT_PLAN'); }
+}
+
 function toolLabel(name: string) {
-  return ({ media_context: '正在核对项目与版本', media_reference: '正在读取当前环节的方法', media_schema: '正在核对工作台接口', media_doctor: '正在检查真实媒体运行环境', media_request: '正在执行自媒体工作台操作', media_frame: '正在提取实际视频帧', read_image: '正在查看图片', media_ask_user: '需要你补充一个信息', media_wait_job: '正在等待后台处理' } as Record<string, string>)[name] ?? '正在处理自媒体任务';
+  return ({ media_context: '正在核对项目与版本', media_reference: '正在读取当前环节的方法', media_script_plan: '正在核对参考来源与原稿保留句', media_schema: '正在核对工作台接口', media_doctor: '正在检查真实媒体运行环境', media_request: '正在执行自媒体工作台操作', media_frame: '正在提取实际视频帧', read_image: '正在查看图片', media_ask_user: '需要你补充一个信息', media_wait_job: '正在等待后台处理' } as Record<string, string>)[name] ?? '正在处理自媒体任务';
 }
 
 export async function testModel(config: Config, root: string) {

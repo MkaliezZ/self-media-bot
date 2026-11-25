@@ -4,7 +4,7 @@ import type { Intent, TaskStatus } from '../../shared/types';
 export const TASKS = [
   { id: 'diagnose', icon: ScanSearch, name: '账号诊断与对标', subtitle: '找出问题，找到参考', prompt: '根据这些作品和资料，找出账号最该先改的问题。' },
   { id: 'topics', icon: Lightbulb, name: '选题策划', subtitle: '把材料变成好角度', prompt: '根据这份素材，给我几个值得拍的选题。' },
-  { id: 'script', icon: FilePenLine, name: '口播脚本', subtitle: '写一版，也改到顺口', prompt: '把这份素材改成约90秒口播稿，保留原意，不编造个人经历。' },
+  { id: 'script', icon: FilePenLine, name: '口播脚本', subtitle: '拆参考、重排原稿、写口播', prompt: '把我的原稿或真实素材编排成约90秒的口播稿。开头点中受众的具体处境，中段用真实细节讲清一个卖点，结尾给一个匹配目标的行动。如果附了爆款样本，请借鉴结构，用我的素材重写。' },
   { id: 'lighting', icon: LampDesk, name: '拍摄布光', subtitle: '按现场条件安排灯光', prompt: '根据现场照片和已有灯具，给我简版、标准、理想三档布光方案。' },
   { id: 'edit', icon: Clapperboard, name: '剪辑与包装', subtitle: '整理节奏、字幕与画面', prompt: '剪这段口播，保留原意，检查字幕和停顿。' },
   { id: 'publish', icon: Send, name: '发布准备', subtitle: '准备标题、配文与清单', prompt: '为这个成片准备标题、配文和发布检查清单，不对外发布。' },

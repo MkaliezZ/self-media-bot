@@ -7,10 +7,27 @@ import { scriptSubmission, tempHome, toolResult, until, testApp, installedWorkbe
 describe('完整主服务重启后的续做', () => {
   it('重建主服务，保留对话、项目、DSH会话与旧稿，再保存修订版', async () => {
     let phase = 0; let context: any;
+    const spoken = '先把目标讲清楚，再给实际材料。最后说说哪些地方得留着。';
     const fixture = await modelServer(body => {
-      const stage = phase++ % 3;
+      const stage = phase++;
       if (stage === 0) return { tool: { name: 'media_context', input: {} } };
-      if (stage === 1) { context = toolResult(body); return { tool: { name: 'media_request', input: { method: 'POST', path: `/api/agent/v1/projects/${context.project.id}/artifacts`, body_json: JSON.stringify(scriptSubmission(context)) } } }; }
+      if (stage === 1) {
+        context = toolResult(body);
+        if (context.heads.script) {
+          return { tool: { name: 'media_script_plan', input: { reference_source_ids: [], preserve: [], logic_json: JSON.stringify([
+            { label: '交代目标和材料', source_quote: '先说清楚目标，再提供真实材料', spoken_options: ['先把目标讲清楚，再给实际材料。'] },
+            { label: '说清范围', source_quote: '最后说明不能改变的边界', spoken_options: ['最后说说哪些地方得留着。'] },
+          ]) } } };
+        }
+      }
+      if (stage === (context.heads.script ? 2 : 1)) {
+        const draft = scriptSubmission(context, context.heads.script ? spoken : undefined);
+        draft.payload.cta = '';
+        return { tool: { name: 'media_request', input: { method: 'POST', path: `/api/agent/v1/projects/${context.project.id}/artifacts`, body_json: JSON.stringify(draft) } } };
+      }
+      phase = 0;
+      const saved = toolResult(body);
+      expect(saved?.accepted, JSON.stringify(saved)).toBe(true);
       return { text: '已保存测试稿件，待人工试读。' };
     });
     const home = await tempHome('restart'); let host: Awaited<ReturnType<typeof createApp>> | undefined;
